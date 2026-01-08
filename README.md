@@ -4,12 +4,6 @@
 NVIDIA
 ---
 
-### Using VLA-0 in Your Research?
-
-We'd love to hear about your work! If you've used VLA-0 in your research or projects, please reach out to [Ankit Goyal](mailto:ankgoyal@umich.edu) — we'd be happy to feature your work here.
-
----
-
 ## Installation
 
 This section provides streamlined installation steps for training and evaluating VLA-0 (based on Qwen2.5-VL-3B) with LIBERO support.
@@ -162,6 +156,12 @@ We welcome community contributions! Some areas we have identified are:
 - **TensorRT-LLM Integration**: Our initial experiments suggest inference speed could be improved from 4 Hz to 6 Hz using optimized inference engines like TensorRT-LLM.
 - **Lower Precision Deployment**: Implementing quantization and lower precision inference (e.g., INT8) could provide significant speed improvements with minimal accuracy loss.
 - **Direct LeRobot Integrations**: Make integrating with lerobot simpler and easier.
+
+---
+
+### Using VLA-0 in Your Research?
+
+We'd love to hear about your work! If you've used VLA-0 in your research or projects, please reach out to [Ankit Goyal](mailto:ankgoyal@umich.edu) — we'd be happy to feature your work.
 
 ---
 
