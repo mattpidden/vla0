@@ -3,6 +3,32 @@
 **Ankit Goyal, Hugo Hadfield, Xuning Yang, Valts Bulkis, Fabio Ramos**
 NVIDIA
 ---
+## Abstract
+
+Vision-Language-Action models (VLAs) hold immense promise for enabling generalist robot manipulation. However, the best way to build them remains an open question. Current approaches often add complexity, such as modifying the existing vocabulary of a Vision-Language Model (VLM) with action tokens or introducing special action heads. Curiously, the simplest strategy of representing actions directly as text has remained largely unexplored.
+
+This work introduces **VLA-0** to investigate this idea. We find that VLA-0 is not only effective; it is surprisingly powerful. With the right design, VLA-0 outperforms more involved models. On LIBERO, a popular benchmark for evaluating VLAs, VLA-0 outperforms all existing methods trained on the same robotic data. Furthermore, without large-scale robotics-specific training, it outperforms methods trained on large-scale robotic data. These findings also translate to the real world, where VLA-0 outperforms SmolVLA, a VLA model pre-trained on large-scale real data.
+
+---
+
+## Key Results
+
+- :white_check_mark: **Best performance** on LIBERO among models without large-scale pretraining (94.7% average success rate)
+- :white_check_mark: **Outperforms** methods with large-scale pretraining (π₀, π₀.₅-KI, GR00T-N1, MolmoAct)
+- :white_check_mark: **Superior real-world performance** (+12.5% over SmolVLA on SO-100 robot)
+- :white_check_mark: **No architectural changes** to the base VLM required
+
+---
+
+## VLA-0 Community Implementations and Extensions
+-  [vla0-trl](https://github.com/MilkClouds/vla0-trl): Minimal VLA-0 Reimplementation with TRL
+-  [VLA-0-Smol](https://robot-learning-collective.github.io/vla-0-smol): A Reproducible Recipe for High-Performance, Sub-Billion Parameter VLA
+
+### Using VLA-0 in Your Research?
+
+We'd love to hear about your work! If you've used VLA-0 in your research or projects, please reach out to [Ankit Goyal](mailto:ankgoyal@umich.edu) — we'd be happy to feature your work.
+
+---
 
 ## Installation
 
@@ -99,22 +125,7 @@ Replace the `SERVER_URL` in the script with the IP address printed by the server
 
 ---
 
-## Abstract
 
-Vision-Language-Action models (VLAs) hold immense promise for enabling generalist robot manipulation. However, the best way to build them remains an open question. Current approaches often add complexity, such as modifying the existing vocabulary of a Vision-Language Model (VLM) with action tokens or introducing special action heads. Curiously, the simplest strategy of representing actions directly as text has remained largely unexplored.
-
-This work introduces **VLA-0** to investigate this idea. We find that VLA-0 is not only effective; it is surprisingly powerful. With the right design, VLA-0 outperforms more involved models. On LIBERO, a popular benchmark for evaluating VLAs, VLA-0 outperforms all existing methods trained on the same robotic data. Furthermore, without large-scale robotics-specific training, it outperforms methods trained on large-scale robotic data. These findings also translate to the real world, where VLA-0 outperforms SmolVLA, a VLA model pre-trained on large-scale real data.
-
----
-
-## Key Results
-
-- :white_check_mark: **Best performance** on LIBERO among models without large-scale pretraining (94.7% average success rate)
-- :white_check_mark: **Outperforms** methods with large-scale pretraining (π₀, π₀.₅-KI, GR00T-N1, MolmoAct)
-- :white_check_mark: **Superior real-world performance** (+12.5% over SmolVLA on SO-100 robot)
-- :white_check_mark: **No architectural changes** to the base VLM required
-
----
 
 ## Resources
 
@@ -159,11 +170,6 @@ We welcome community contributions! Some areas we have identified are:
 
 ---
 
-### Using VLA-0 in Your Research?
-
-We'd love to hear about your work! If you've used VLA-0 in your research or projects, please reach out to [Ankit Goyal](mailto:ankgoyal@umich.edu) — we'd be happy to feature your work.
-
----
 
 ## Citation
 
