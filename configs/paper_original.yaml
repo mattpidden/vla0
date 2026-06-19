@@ -1,5 +1,5 @@
 EXP:
-  EXP_ID: "vla0"
+  EXP_ID: "paper_original"
   MODEL: "qwen" 
   LR_SCHED: "none"
   AMP: True
@@ -18,7 +18,7 @@ DATALOADER:
   batch_size: 8
   num_workers: 8
   ROBOVERSE:
-    cfg_path: libs/RoboVerse/roboverse/configs/img_libero_aug.yaml
+    cfg_path: libs/RoboVerse/roboverse/configs/paper_original.yaml
     cfg_opts: IMAGE.crop_img:0.875:IMAGE.img_size:224:IMAGE.cam_list:('3p1','3p2')
 
 MODEL:

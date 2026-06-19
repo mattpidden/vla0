@@ -259,12 +259,29 @@ def get_dataloader(split, cfg, get_dataset=False):
     if get_dataset:
         return dataset
     else:
+        use_distributed = dist.is_available() and dist.is_initialized()
+        if use_distributed and split == "train":
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                dataset,
+                num_replicas=dist.get_world_size(),
+                rank=dist.get_rank(),
+                shuffle=True,
+                drop_last=True,
+            )
+            shuffle = False
+            drop_last = False
+        else:
+            sampler = None
+            shuffle = split == "train"
+            drop_last = split == "train"
+
         return DataLoader(
             dataset,
             batch_size,
             num_workers=num_workers,
-            shuffle=(split == "train"),
-            drop_last=(split == "train"),
+            shuffle=shuffle,
+            sampler=sampler,
+            drop_last=drop_last,
             pin_memory=(torch.cuda.is_available()) and (not num_workers),
             persistent_workers=(num_workers > 0),
         )
@@ -358,7 +375,8 @@ def train(
     time_bac = 0
     time_dl = 0
     time4 = time()
-    for i, data_batch in tqdm.tqdm(enumerate(loader), dynamic_ncols=True):
+    pbar = tqdm.tqdm(enumerate(loader), total=len(loader), dynamic_ncols=True)
+    for i, data_batch in pbar:
         data_batch = loader.dataset.batch_proc(data_batch, device)
         inp = get_inp(cfg, data_batch)
 
@@ -380,19 +398,25 @@ def train(
             optimizer.step()
 
         time3 = time()
-        time_dl += time1 - time4
-        time_for += time2 - time1
-        time_bac += time3 - time2
+        dl_this = time1 - time4
+        fwd_this = time2 - time1
+        bwd_this = time3 - time2
+        time_dl += dl_this
+        time_for += fwd_this
+        time_bac += bwd_this
         time4 = time()
+
+        pbar.set_postfix(
+            loss=f"{loss.item():.4f}",
+            fwd=f"{fwd_this:.2f}s",
+            bwd=f"{bwd_this:.2f}s",
+            dl=f"{dl_this:.2f}s",
+        )
 
         if fn_check_time_limit_and_relaunch is not None:
             # checking every 300 batches ~ 5 minutes
             if (i + 1) % 300 == 0:
                 fn_check_time_limit_and_relaunch(perf.agg_loss())
-
-        # uncomment for intermediate printing
-        # if i % 10 == 0:
-        #     print(f"Iteration {i} time taken: {time_for:.2f}s, {time_bac:.2f}s, {time_dl:.2f}s")
 
     print(
         f"Avg_loss: {perf.agg_loss():.4f}, "
@@ -539,6 +563,10 @@ def entry_train(
         # print epoch number
         if rank == 0:
             print(f"Training for epoch {epoch} / {cfg.TRAIN.num_epochs}")
+
+        # shuffle data differently each epoch when using DistributedSampler
+        if hasattr(loader_train.sampler, "set_epoch"):
+            loader_train.sampler.set_epoch(epoch)
 
         # train
         train_perf, train_loss = train(

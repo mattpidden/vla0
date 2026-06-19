@@ -207,7 +207,7 @@ class QwenActor(nn.Module):
 
         self._sysuser_len = None
 
-        self.cache_sysuser_len = False
+        self.cache_sysuser_len = True
 
     def set_dataset_stats(self, dataset_stats):
         """
@@ -300,12 +300,14 @@ class QwenActor(nn.Module):
                 min_pixels=min_pixel,
                 max_pixels=max_pixel,
                 padding_side=padding_side,
+                use_fast=True,
             )
         else:
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 qwen_model_id,
                 min_pixels=min_pixel,
                 max_pixels=max_pixel,
+                use_fast=True,
             )
 
         return processor

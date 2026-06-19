@@ -61,7 +61,39 @@ def get_lerobot_metadata(repo_id):
     :param repo_id: (str) Repository ID from huggingface to load the dataset
     :return: (dict) Metadata for the dataset
     """
-    return LeRobotDatasetMetadata(repo_id=repo_id)
+    try:
+        return LeRobotDatasetMetadata(repo_id=repo_id)
+    except NotImplementedError:
+        # Some published datasets (e.g. physical-intelligence/libero) use a codebase
+        # version older than the installed lerobot supports loading via
+        # LeRobotDatasetMetadata (only v2.1 has an automatic migration path).
+        # We only need camera_keys here, so fetch meta/info.json directly at the
+        # dataset's actual hub version.
+        from huggingface_hub import snapshot_download
+        from lerobot.datasets.utils import get_repo_versions, load_info
+        from lerobot.utils.constants import HF_LEROBOT_HOME
+
+        version = max(get_repo_versions(repo_id))
+        root = HF_LEROBOT_HOME / repo_id
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            revision=f"v{version}",
+            allow_patterns="meta/info.json",
+            local_dir=root,
+        )
+        info = load_info(root)
+
+        class _MinimalMetadata:
+            features = info["features"]
+            fps = info["fps"]
+            camera_keys = [
+                key
+                for key, ft in info["features"].items()
+                if ft["dtype"] in ["video", "image"]
+            ]
+
+        return _MinimalMetadata()
 
 
 def get_final_le_cam_list_rv_cam_list(metadata, le_cam_list, rv_cam_list):
@@ -81,8 +113,6 @@ def get_final_le_cam_list_rv_cam_list(metadata, le_cam_list, rv_cam_list):
         le_cam_list = (
             list(le_cam_list) if not isinstance(le_cam_list, list) else le_cam_list
         )
-        print(f"le_cam_list: {le_cam_list}")
-        print(f"metadata.camera_keys: {metadata.camera_keys}")
         for _cam in le_cam_list:
             assert _cam in metadata.camera_keys, f"Camera {_cam} not found in metadata"
 
@@ -118,6 +148,7 @@ def le_sample_to_rv_sample(
     convert_ori_act_to_delta_act=False,
     remove_noop_actions=False,
     fps=-1,
+    episodes=None,
 ):
     """
     Convert a sample from LeRobot dataset to a sample in RV dataset. Should use the exact same arguments as LeRobotRV.__init__.
@@ -133,6 +164,7 @@ def le_sample_to_rv_sample(
     :param add_ori_act: (bool) Whether to add the original action to the sample
     :param add_out_ori_act: (bool) Whether to add the original action to the sample
     :param convert_ori_act_to_delta_act: (bool) Whether to convert the original action to delta action
+    :param episodes: (list) Unused here, only relevant when constructing the underlying LeRobotDataset. Accepted so cfg.LEROBOT can be passed through directly.
     :return: (dict) A sample in RV dataset
     """
     rv_sample = {}

@@ -30,8 +30,25 @@ runs/
 slurm/slurm_outputs/
 
 # repository specific files
-logs/*.log
+*.log
 docker/*.sqsh
+
+# model weights and training artifacts
+*.pth
+*.pt
+*.pkl
+*.ckpt
+*.safetensors
+events.out.tfevents.*
+
+# the paper PDF (not user's original work)
+vla0.pdf
+
+# claude code internal files
+.claude/
+
+# HuggingFace cache if ever placed locally
+hf_cache/
 
 # libraries to ignore
 libs/egl_probe/

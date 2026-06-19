@@ -53,6 +53,7 @@ _C.LEROBOT.state_key = "observation.state"
 _C.LEROBOT.convert_ori_act_to_delta_act = False
 _C.LEROBOT.remove_noop_actions = False
 _C.LEROBOT.fps = -1
+_C.LEROBOT.episodes = None
 
 
 def get_cfg_defaults():
