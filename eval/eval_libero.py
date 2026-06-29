@@ -20,8 +20,8 @@ def main():
     parser.add_argument(
         "--task_name",
         type=str,
-        help="Name of the task inside the task suite to evaluate on. Must be provided.",
-        required=True,
+        default=None,
+        help="Name of the task to evaluate on. Omit to evaluate all tasks in the suite.",
     )
     parser.add_argument(
         "--task_suite_name",
@@ -100,9 +100,10 @@ def main():
     assert (
         args.task_suite_name in all_tasks
     ), f"Task suite {args.task_suite_name} not found in {all_tasks.keys()}"
-    assert (
-        args.task_name in all_tasks[args.task_suite_name]
-    ), f"Task {args.task_name} not found in {all_tasks[args.task_suite_name]}"
+    if args.task_name is not None:
+        assert (
+            args.task_name in all_tasks[args.task_suite_name]
+        ), f"Task {args.task_name} not found in {all_tasks[args.task_suite_name]}"
 
     model, cfg = get_pretrained_model(
         args.model_path, 0, torch_compile=not args.no_torch_compile
@@ -165,7 +166,8 @@ def main():
     log_dir = f"{log_dir}_eval_libero"
 
     log_dir = os.path.join(log_dir, args.task_suite_name)
-    log_dir = os.path.join(log_dir, args.task_name)
+    if args.task_name is not None:
+        log_dir = os.path.join(log_dir, args.task_name)
     os.makedirs(log_dir, exist_ok=True)
 
     eval(

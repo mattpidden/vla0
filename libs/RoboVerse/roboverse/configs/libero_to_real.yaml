@@ -1,0 +1,29 @@
+# VLA-0 sim-to-real fine-tuning dataset config.
+# Dataset: mattpidden/vla0-real-world-dataset-v3 (400 episodes, 4 tasks, 100 each)
+# Robot: SO101 (6 DOF — see original_action_dim: 6 in training config)
+# FPS: dataset recorded at 30fps, overridden to 10fps to match LIBERO temporal spacing
+#   → dataloader samples every 3rd frame; 8-step horizon = 0.8s, same as LIBERO
+# Cameras: wrist (wrist-mounted) + middle (overhead) — 2 cameras, tiled like LIBERO
+# Resolution: 640×480 source, cropped to 480×480 square at load time (crop_img:1.0),
+#   then training-time augmentation crops to 0.875×480=420 and resizes to 224×224.
+#   This is a center crop — consistent at train and eval. Do NOT squash to square.
+unifier: image
+history: 1
+horizon: 8
+datasets: [lerobot]
+
+LEROBOT:
+  repo_id: mattpidden/vla0-real-world-dataset-v3
+  action_key: action
+  state_key: observation.state
+  fps: 10
+  le_cam_list: ['observation.images.wrist', 'observation.images.middle']
+  rv_cam_list: ['3p1', '3p2']
+
+IMAGE:
+  crop_img: 1.0
+  brightness_aug: 0.3
+  contrast_aug: 0.3
+  saturation_aug: 0.3
+  hue_aug: 0.05
+  return_ori_act: True

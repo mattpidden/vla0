@@ -1,0 +1,50 @@
+# Sim-to-real fine-tuning: LIBERO pre-trained weights → SO101 real world.
+#
+# Key decisions:
+#   - qwen_model_id: loads from LIBERO-trained model_last/ directory instead of
+#     base Qwen weights. from_pretrained() accepts local paths. This gives the
+#     model LIBERO's action format priors as the starting point.
+#   - use_lora: True — 400 real episodes is too small for safe full fine-tuning.
+#     LoRA preserves LIBERO priors while adapting the visual-action mapping.
+#     lora_rank 32 gives enough capacity for sim-to-real visual adaptation.
+#   - original_action_dim: 6 — SO101 has 6 DOF (vs LIBERO's 7). The LM backbone
+#     is unchanged; it just predicts 48 tokens (6×8) instead of 56 (7×8).
+#   - lr: 1e-6 — 5× lower than LIBERO training. Nudging pre-trained weights, not
+#     rebuilding them.
+#   - num_epochs: 15 — sufficient for a 400-episode dataset. More risks overfitting.
+EXP:
+  EXP_ID: "libero_to_real_full"
+  MODEL: "qwen"
+  LR_SCHED: "none"
+  AMP: True
+  OPTIMIZER: "adamw"
+
+TRAIN:
+  lr: 1e-6
+  num_epochs: 15
+  clip_grad_norm: 0.0
+  l2: 1e-10
+
+EXP_EXTRA:
+  save_ckp: 2
+  save_last_ckpt: True
+
+DATALOADER:
+  batch_size: 8
+  num_workers: 3
+  ROBOVERSE:
+    cfg_path: libs/RoboVerse/roboverse/configs/libero_to_real.yaml
+    cfg_opts: IMAGE.crop_img:0.875:IMAGE.img_size:224:IMAGE.cam_list:('3p1','3p2')
+
+MODEL:
+  QWEN:
+    qwen_model_id: ./runs/paper_original/model_last
+    add_vision_id: True
+    use_lora: False
+    use_qlora: False
+    use_flash_attention_2: False
+    rgb_img_size: 224,224
+    original_action_dim: 6
+    action_mask_aug_per: 0.4
+    num_cam: 2
+    tiled_rgb_imgs: True

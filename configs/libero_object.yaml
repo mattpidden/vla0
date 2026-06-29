@@ -1,6 +1,8 @@
+# Full fine-tuning on all 10 LIBERO-Object tasks (454 episodes).
+# Hyperparameters match the VLA-0 paper exactly.
 EXP:
-  EXP_ID: "reproduce_paper_original"
-  MODEL: "qwen" 
+  EXP_ID: "libero_object"
+  MODEL: "qwen"
   LR_SCHED: "none"
   AMP: True
   OPTIMIZER: "adamw"
@@ -13,18 +15,19 @@ TRAIN:
 
 EXP_EXTRA:
   save_ckp: 2
+  save_last_ckpt: True
 
 DATALOADER:
   batch_size: 8
-  num_workers: 8
+  num_workers: 3
   ROBOVERSE:
-    cfg_path: libs/RoboVerse/roboverse/configs/paper_original.yaml
+    cfg_path: libs/RoboVerse/roboverse/configs/img_libero_aug_object.yaml
     cfg_opts: IMAGE.crop_img:0.875:IMAGE.img_size:224:IMAGE.cam_list:('3p1','3p2')
 
 MODEL:
   QWEN:
     add_vision_id: True
-    use_lora: False 
+    use_lora: False
     use_qlora: False
     use_flash_attention_2: False
     rgb_img_size: 224,224

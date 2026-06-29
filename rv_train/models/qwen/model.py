@@ -207,7 +207,7 @@ class QwenActor(nn.Module):
 
         self._sysuser_len = None
 
-        self.cache_sysuser_len = True
+        self.cache_sysuser_len = False
 
     def set_dataset_stats(self, dataset_stats):
         """

@@ -28,24 +28,36 @@ from lerobot.robots.so101_follower.so101_follower import SO101Follower
 SERVER_URL = "http://localhost:10000"
 
 # Task instruction sent to the model
-TASK = "Reorient the block."
+TASK = "Push the apple to the block."
 
-# Camera indices: right=10 (3p1), left=12 (3p2) — must match training order
-RIGHT_CAMERA_IDX = 10
-LEFT_CAMERA_IDX = 12
+# Camera indices — must match training order:
+#   3p1 (first image) = wrist camera  (observation.images.wrist)
+#   3p2 (second image) = middle camera (observation.images.middle)
+WRIST_CAMERA_IDX = 3
+MIDDLE_CAMERA_IDX = 8
 
 # Robot serial port
-ROBOT_PORT = "/dev/ttyACM1"
+ROBOT_PORT = "/dev/ttyACM0"
 
-# Control frequency for executing the returned action chunk.
-# Must match the dataset FPS (30) so each action step covers the same
-# time interval the model was trained on.
-CONTROL_HZ = 30
+# Control frequency. Must match dataset FPS (10) so each action step covers
+# the same time interval the model was trained on.
+CONTROL_HZ = 10
 
-# Number of action steps to execute before querying the model again.
-# The model returns `horizon=8` steps; executing all of them before re-querying
-# works well at the ~4 Hz inference speed documented in the VLA-0 paper.
-STEPS_BEFORE_REQUERY = 8
+# Action horizon returned by the model.
+HORIZON = 8
+
+# Set to False to execute a chunk of actions before re-querying (original behaviour).
+# Set to True to query every step and blend overlapping predictions.
+USE_ENSEMBLE = True
+
+# How many overlapping predictions to blend (ensemble mode) or how many actions
+# to execute per chunk before re-querying (non-ensemble mode).
+# Lower = less averaging, more reactive. 4 is a good middle ground vs 8.
+ENSEMBLE_DEPTH = 4
+
+# Temporal ensembling decay. Lower = more weight on older predictions (smoother).
+# Higher = newer predictions dominate. 0.1 is a good starting point.
+ENSEMBLE_LAMBDA = 0.5
 # ─────────────────────────────────────────────────────────────────────────────
 
 MOTOR_NAMES = [
@@ -76,6 +88,35 @@ def predict(images: list, state: list, instruction: str) -> np.ndarray:
     return np.array(resp.json())  # (horizon, 6)
 
 
+# Rolling buffer for temporal ensembling.
+# stored_actions[0] = remaining predictions from 1 step ago (newest stored)
+# stored_actions[k][0] = that buffer's prediction for the current step
+_ensemble_buf: list[np.ndarray] = []
+
+
+def ensemble_action(new_actions: np.ndarray) -> np.ndarray:
+    """
+    Blend new_actions[0] with buffered predictions of the current step.
+    new_actions: (horizon, action_dim)
+    Returns: (action_dim,) blended action.
+    """
+    # Collect candidates: newest first
+    candidates = [new_actions[0]] + [buf[0] for buf in _ensemble_buf if len(buf) > 0]
+    n = len(candidates)
+    weights = np.array([np.exp(-ENSEMBLE_LAMBDA * k) for k in range(n)])
+    weights /= weights.sum()
+    blended = np.einsum("i,ij->j", weights, np.stack(candidates))
+
+    # Advance buffer: shift each entry by one step (consume the just-executed step)
+    advanced = [buf[1:] for buf in _ensemble_buf if len(buf) > 1]
+    # Prepend remaining steps of this query as the newest stored entry
+    if HORIZON > 1:
+        advanced = [new_actions[1:]] + advanced
+    _ensemble_buf[:] = advanced[: ENSEMBLE_DEPTH - 1]
+
+    return blended
+
+
 def main():
     # Verify server is up before connecting hardware
     try:
@@ -86,12 +127,12 @@ def main():
         return
 
     cameras = {
-        # right camera (3p1) must be first to match training
-        "right": OpenCVCameraConfig(
-            index_or_path=RIGHT_CAMERA_IDX, width=640, height=480, fps=30
+        # wrist (3p1) must be first, middle (3p2) second — matches training order
+        "wrist": OpenCVCameraConfig(
+            index_or_path=WRIST_CAMERA_IDX, width=640, height=480, fps=30
         ),
-        "left": OpenCVCameraConfig(
-            index_or_path=LEFT_CAMERA_IDX, width=640, height=480, fps=30
+        "middle": OpenCVCameraConfig(
+            index_or_path=MIDDLE_CAMERA_IDX, width=640, height=480, fps=30
         ),
     }
     robot_cfg = SO101FollowerConfig(
@@ -112,54 +153,80 @@ def main():
     try:
         step = 0
         actions = None
+        action_idx = 0
 
         while True:
-            # Re-query the model every STEPS_BEFORE_REQUERY steps (or on first step)
-            if step % STEPS_BEFORE_REQUERY == 0:
+            t0 = time.perf_counter()
+
+            if USE_ENSEMBLE:
+                # Query every step and blend overlapping predictions
                 obs = robot.get_observation()
-
-                # Images: right first (3p1), then left (3p2)
-                right_img = obs["right"]
-                left_img = obs["left"]
-
+                wrist_img = obs["wrist"]
+                middle_img = obs["middle"]
                 state = [obs[f"{m}.pos"] for m in MOTOR_NAMES]
 
-                print(
-                    f"Querying model (step {step}) | state={[f'{v:.1f}' for v in state]}"
-                )
-
-                # Debug: save camera frames so you can verify framing/content
                 if step == 0:
                     import cv2
 
                     cv2.imwrite(
-                        "/vol/dissolve/matt/models/vla0/tmp/vla0_right_cam.jpg",
-                        cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR),
+                        "/vol/dissolve/matt/models/vla0/tmp/vla0_wrist_cam.jpg",
+                        cv2.cvtColor(wrist_img, cv2.COLOR_RGB2BGR),
                     )
                     cv2.imwrite(
-                        "/vol/dissolve/matt/models/vla0/tmp/vla0_left_cam.jpg",
-                        cv2.cvtColor(left_img, cv2.COLOR_RGB2BGR),
+                        "/vol/dissolve/matt/models/vla0/tmp/vla0_middle_cam.jpg",
+                        cv2.cvtColor(middle_img, cv2.COLOR_RGB2BGR),
                     )
                     print(
-                        "Saved camera frames to /tmp/vla0_right_cam.jpg and /tmp/vla0_left_cam.jpg"
+                        "Saved camera frames to tmp/vla0_wrist_cam.jpg and tmp/vla0_middle_cam.jpg"
                     )
 
                 t_query = time.perf_counter()
-                actions = predict([right_img, left_img], state, TASK)
+                new_actions = predict([wrist_img, middle_img], state, TASK)
                 print(
-                    f"Model responded in {time.perf_counter() - t_query:.2f}s | actions shape: {actions.shape}"
+                    f"step {step} | inference {time.perf_counter() - t_query:.2f}s"
+                    f" | ensemble depth {len(_ensemble_buf)+1}"
+                    f" | state={[f'{v:.1f}' for v in state]}"
                 )
+                action = ensemble_action(new_actions)
 
-                action_idx = 0
+            else:
+                # Re-query every STEPS_BEFORE_REQUERY steps
+                if step % ENSEMBLE_DEPTH == 0:
+                    obs = robot.get_observation()
+                    wrist_img = obs["wrist"]
+                    middle_img = obs["middle"]
+                    state = [obs[f"{m}.pos"] for m in MOTOR_NAMES]
 
-            # Execute one action step
-            t0 = time.perf_counter()
-            action = actions[action_idx]
+                    if step == 0:
+                        import cv2
+
+                        cv2.imwrite(
+                            "/vol/dissolve/matt/models/vla0/tmp/vla0_wrist_cam.jpg",
+                            cv2.cvtColor(wrist_img, cv2.COLOR_RGB2BGR),
+                        )
+                        cv2.imwrite(
+                            "/vol/dissolve/matt/models/vla0/tmp/vla0_middle_cam.jpg",
+                            cv2.cvtColor(middle_img, cv2.COLOR_RGB2BGR),
+                        )
+                        print(
+                            "Saved camera frames to tmp/vla0_wrist_cam.jpg and tmp/vla0_middle_cam.jpg"
+                        )
+
+                    t_query = time.perf_counter()
+                    actions = predict([wrist_img, middle_img], state, TASK)
+                    print(
+                        f"step {step} | inference {time.perf_counter() - t_query:.2f}s"
+                        f" | state={[f'{v:.1f}' for v in state]}"
+                    )
+                    action_idx = 0
+
+                action = actions[action_idx]
+                action_idx += 1
+
             action_dict = {
                 f"{m}.pos": float(action[i]) for i, m in enumerate(MOTOR_NAMES)
             }
             robot.send_action(action_dict)
-            action_idx += 1
 
             step += 1
             elapsed = time.perf_counter() - t0
