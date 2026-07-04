@@ -4,13 +4,16 @@
 #   - qwen_model_id: loads from LIBERO-trained model_last/ directory instead of
 #     base Qwen weights. from_pretrained() accepts local paths. This gives the
 #     model LIBERO's action format priors as the starting point.
-#   - use_lora: True — 400 real episodes is too small for safe full fine-tuning.
-#     LoRA preserves LIBERO priors while adapting the visual-action mapping.
-#     lora_rank 32 gives enough capacity for sim-to-real visual adaptation.
+#   - use_lora: False — full fine-tune. LoRA was tried first and underperformed;
+#     this run gives the model full capacity to adapt to the real-world domain.
+#   - clip_grad_norm: 1.0 — full fine-tuning touches all 3.7B params with no LR
+#     warmup available in this codebase, so clipping is needed to prevent large
+#     gradients from destabilizing training (loss plateaued/rose without it).
 #   - original_action_dim: 6 — SO101 has 6 DOF (vs LIBERO's 7). The LM backbone
 #     is unchanged; it just predicts 48 tokens (6×8) instead of 56 (7×8).
-#   - lr: 1e-6 — 5× lower than LIBERO training. Nudging pre-trained weights, not
-#     rebuilding them.
+#   - lr: 1.5e-6 — 5e-7 + clip_grad_norm:1.0 was stable but barely moved (3.5→3.0
+#     over 33% of epoch 0). Pushing LR back up since clipping now guards against
+#     the instability that the original 1e-6 (uncapped) run hit.
 #   - num_epochs: 15 — sufficient for a 400-episode dataset. More risks overfitting.
 EXP:
   EXP_ID: "libero_to_real_full"
@@ -20,9 +23,9 @@ EXP:
   OPTIMIZER: "adamw"
 
 TRAIN:
-  lr: 1e-6
+  lr: 1.5e-6
   num_epochs: 15
-  clip_grad_norm: 0.0
+  clip_grad_norm: 1.0
   l2: 1e-10
 
 EXP_EXTRA:

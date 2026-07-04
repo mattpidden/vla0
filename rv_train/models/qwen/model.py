@@ -100,6 +100,7 @@ class QwenActor(nn.Module):
         action_mask_aug=0,
         action_mask_aug_per=0.1,
         attention_dropout=0.0,
+        grad_checkpoint=False,
     ):
         """
         :param qwen_model_id: str, the id of the qwen model to use

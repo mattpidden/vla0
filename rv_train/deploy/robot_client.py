@@ -28,13 +28,13 @@ from lerobot.robots.so101_follower.so101_follower import SO101Follower
 SERVER_URL = "http://localhost:10000"
 
 # Task instruction sent to the model
-TASK = "Push the apple to the block."
+TASK = "Pick the sponge and place it on the cloth."
 
 # Camera indices — must match training order:
 #   3p1 (first image) = wrist camera  (observation.images.wrist)
 #   3p2 (second image) = middle camera (observation.images.middle)
-WRIST_CAMERA_IDX = 3
-MIDDLE_CAMERA_IDX = 8
+WRIST_CAMERA_IDX = 8
+MIDDLE_CAMERA_IDX = 4
 
 # Robot serial port
 ROBOT_PORT = "/dev/ttyACM0"
@@ -48,7 +48,7 @@ HORIZON = 8
 
 # Set to False to execute a chunk of actions before re-querying (original behaviour).
 # Set to True to query every step and blend overlapping predictions.
-USE_ENSEMBLE = True
+USE_ENSEMBLE = False
 
 # How many overlapping predictions to blend (ensemble mode) or how many actions
 # to execute per chunk before re-querying (non-ensemble mode).
