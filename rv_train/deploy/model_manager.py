@@ -59,7 +59,17 @@ def transform_from_so100(
         unified_sample[k] = torch.tensor(
             unified_sample[k][None], device="cuda:0", dtype=torch.float
         )
-    print(f"Unified sample: {unified_sample}")
+
+    # If the model was trained with state conditioning, add proprio to the batch.
+    # Shape: (batch=1, history=1, state_dim=6) — matches what the dataloader produced
+    # during training. Values are raw degrees, matching observation.state in the dataset.
+    include_state = getattr(cfg.MODEL.QWEN, "include_state", False)
+    if include_state:
+        proprio = np.array(state, dtype=np.float32)  # (6,)
+        proprio = proprio[None, None]                 # (1, 1, 6)
+        unified_sample["proprio"] = torch.tensor(proprio, device="cuda:0", dtype=torch.float)
+
+    print(f"Unified sample keys: {list(unified_sample.keys())}")
     print(unified_sample["rgb"].shape)
     return unified_sample
 
