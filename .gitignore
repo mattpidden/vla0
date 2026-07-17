@@ -32,6 +32,7 @@ slurm/slurm_outputs/
 # repository specific files
 *.log
 docker/*.sqsh
+logs/
 
 # model weights and training artifacts
 *.pth
@@ -49,6 +50,7 @@ vla0.pdf
 
 # HuggingFace cache if ever placed locally
 hf_cache/
+data/
 
 # libraries to ignore
 libs/egl_probe/

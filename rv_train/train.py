@@ -89,9 +89,7 @@ def load_model(model, model_path, cfg):
 
     # take care of model loading for models that have load_pretrained method
     if hasattr(model_module, "from_pretrained"):
-        print("WARNING: model has from_pretrained method")
         assert model_path[-4:] == ".pth"
-        print(f"Loading from {model_path[:-4]}")
         model_module.from_pretrained(model_path[:-4])
     else:
         model_module.load_state_dict(checkpoint["model_state"])
@@ -130,6 +128,10 @@ def load_model_opt_sched(
         checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
 
     if not only_load_model:
+        # Clear the freshly-initialised (zero) optimizer state from GPU before
+        # loading the checkpoint state, so both don't occupy GPU memory at once.
+        optimizer.state.clear()
+        torch.cuda.empty_cache()
         optimizer.load_state_dict(checkpoint["optimizer_state"])
         if lr_sched is not None:
             lr_sched.load_state_dict(checkpoint["lr_sched_state"])
@@ -381,10 +383,16 @@ def train(
         inp = get_inp(cfg, data_batch)
 
         time1 = time()
+        compute_mae = (i % 50 == 0) and (rank == 0)
         with autocast(device_type="cuda", dtype=torch.bfloat16, enabled=cfg.EXP.AMP):
-            out = model(**inp, get_loss=True)
+            out = model(**inp, get_loss=True, compute_mae=compute_mae)
         loss = out["loss"]
         perf.update_all(data_batch=data_batch, out=out, loss=loss)
+
+        if compute_mae and out.get("mae_per_joint") is not None:
+            mae = out["mae_per_joint"]
+            mae_str = "  ".join([f"j{j+1}:{mae[j].item():.4f}" for j in range(len(mae))])
+            print(f"\n[step {i}] MAE (physical joint space): {mae_str}  mean:{mae.mean().item():.4f}")
 
         time2 = time()
         optimizer.zero_grad()
@@ -478,6 +486,20 @@ def entry_train(
     device = devices[rank]
     device = f"cuda:{device}"
     ddp = len(devices) > 1
+
+    # Pre-download dataset before NCCL init to avoid communicator timeout.
+    # Uses an exclusive file lock so processes serialize and only the first
+    # truly downloads; the rest verify cached files exist (fast).
+    if ddp:
+        import fcntl
+        _lock_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".dataset_download.lock")
+        with open(_lock_path, "w") as _lf:
+            fcntl.flock(_lf, fcntl.LOCK_EX)
+            try:
+                get_dataloader(split="train", cfg=cfg, get_dataset=True)
+            finally:
+                fcntl.flock(_lf, fcntl.LOCK_UN)
+
     utils.setup(rank, world_size=len(devices), port=port)
     torch.cuda.set_device(device)
     if ddp:

@@ -88,6 +88,7 @@ _C.MODEL.QWEN.use_flash_attention_2 = False
 _C.MODEL.QWEN.action_mask_aug_per = 0.1
 _C.MODEL.QWEN.attention_dropout = 0.0
 _C.MODEL.QWEN.grad_checkpoint = False
+_C.MODEL.QWEN.include_state = False
 
 
 def get_cfg_defaults():

@@ -101,6 +101,7 @@ class QwenActor(nn.Module):
         action_mask_aug_per=0.1,
         attention_dropout=0.0,
         grad_checkpoint=False,
+        include_state=False,
     ):
         """
         :param qwen_model_id: str, the id of the qwen model to use
@@ -159,6 +160,8 @@ class QwenActor(nn.Module):
         self.use_flash_attention_2 = use_flash_attention_2
         self.action_mask_aug_per = action_mask_aug_per
         self.attention_dropout = attention_dropout
+        self.grad_checkpoint = grad_checkpoint
+        self.include_state = include_state
 
         self.model = self.load_qwen_model(
             qwen_model_id=self.qwen_model_id,
@@ -170,7 +173,9 @@ class QwenActor(nn.Module):
             attention_dropout=self.attention_dropout,
         )
 
-        # Enable gradient checkpointing if requested
+        if grad_checkpoint:
+            self.model.gradient_checkpointing_enable()
+
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
 
         self.min_pixel = self.max_pixel = self.rgb_img_size[0] * self.rgb_img_size[1]
@@ -205,6 +210,7 @@ class QwenActor(nn.Module):
         self.dataset_stats = (
             None  # dataset stats is in the format specific to the model
         )
+        self.proprio_stats = None
 
         self._sysuser_len = None
 
@@ -226,6 +232,7 @@ class QwenActor(nn.Module):
             self.dataset_stats = dataset_stats["out_ori_act"]
         else:
             raise NotImplementedError(f"Action type {self.action_type} not implemented")
+        self.proprio_stats = dataset_stats.get("proprio", None)
 
     @staticmethod
     def load_qwen_model(
@@ -269,6 +276,10 @@ class QwenActor(nn.Module):
         extra_kwargs = {}
         if use_flash_attention_2:
             extra_kwargs["attn_implementation"] = "flash_attention_2"
+        else:
+            # Use PyTorch's built-in SDPA (O(L) memory vs O(L²) for eager).
+            # No flash_attn package needed — PyTorch 2.0+ has this natively.
+            extra_kwargs["attn_implementation"] = "sdpa"
 
         if attention_dropout > 0.0:
             config = AutoConfig.from_pretrained(qwen_model_id)
@@ -569,8 +580,10 @@ class QwenActor(nn.Module):
         out_ee_rot=None,
         out_ee_gri=None,
         out_ori_act=None,
+        proprio=None,
         get_loss=True,
         get_action=False,
+        compute_mae=False,
         generate_temperature=0.1,
         get_one_step_action=False,
         last_action_txt="",
@@ -649,6 +662,26 @@ class QwenActor(nn.Module):
         )
 
         bs = len(instr)
+
+        # Append proprioceptive state to each instruction as discretised tokens
+        if self.include_state and proprio is not None:
+            p = proprio.detach().cpu()
+            if p.dim() == 3:
+                p = p[:, -1, :]  # most recent timestep -> (bs, state_dim)
+            if self.proprio_stats is not None:
+                min_s = torch.tensor(self.proprio_stats["min"], dtype=torch.float32)
+                max_s = torch.tensor(self.proprio_stats["max"], dtype=torch.float32)
+                p_binned = ((p - min_s) / (max_s - min_s + 1e-8) * self.num_bins_actions)
+                p_binned = p_binned.round().clamp(0, self.num_bins_actions).long()
+                instr = [
+                    f"{inst}\nState: {' '.join(str(v) for v in p_binned[i].tolist())}"
+                    for i, inst in enumerate(instr)
+                ]
+            else:
+                instr = [
+                    f"{inst}\nState: {' '.join(f'{v:.3f}' for v in p[i].tolist())}"
+                    for i, inst in enumerate(instr)
+                ]
 
         # imgs is list of list of PIL images
         imgs = self.get_imgs(
@@ -737,11 +770,11 @@ class QwenActor(nn.Module):
             labels[labels == 151643] = -100
 
             outputs = self.model(**model_inputs)
-            logits = outputs.logits  # (batch_size, seq_len, vocab_size)
-
-            # copied from modeling_qwen2_5_vl.py to compute the loss
-            # Upcast to float if we need to compute the loss to avoid potential precision issues
-            logits = logits.float()
+            # Cast to float32 immediately and drop `outputs` so the bfloat16
+            # logits don't stay in GPU memory alongside the float32 copy.
+            # With vocab_size=152k this saves ~3-4 GB per GPU per forward pass.
+            logits = outputs.logits.float()  # (batch_size, seq_len, vocab_size)
+            del outputs
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
@@ -752,7 +785,40 @@ class QwenActor(nn.Module):
             shift_labels = shift_labels.to(shift_logits.device)
             loss = self.loss_fn(shift_logits, shift_labels)
 
-            return {"loss": loss}
+            mae_per_joint = None
+            if compute_mae and out_ori_act is not None:
+                with torch.no_grad():
+                    min_act = torch.tensor(self.dataset_stats["min"], device=out_ori_act.device)
+                    max_act = torch.tensor(self.dataset_stats["max"], device=out_ori_act.device)
+                    pred_acts_list = []
+                    for i in range(bs):
+                        # logits[i, j] predicts the token at position j+1, so
+                        # logits[i, sl-1 : sl-1+n] predicts the n action tokens
+                        sl = self._sysuser_len
+                        act_ids = self.processor.tokenizer.encode(
+                            action_txt[i], add_special_tokens=False
+                        )
+                        n = len(act_ids)
+                        pred_ids = logits[i, sl - 1 : sl - 1 + n].argmax(-1)
+                        pred_text = self.processor.tokenizer.decode(pred_ids)
+                        try:
+                            nums = [int(x) for x in pred_text.split() if x.strip().isdigit()]
+                            nums = nums[: self.horizon * self.act_dim]
+                            if len(nums) < self.horizon * self.act_dim:
+                                nums += [self.num_bins_actions // 2] * (
+                                    self.horizon * self.act_dim - len(nums)
+                                )
+                        except Exception:
+                            nums = [self.num_bins_actions // 2] * (self.horizon * self.act_dim)
+                        bins = torch.tensor(nums, dtype=torch.float32, device=out_ori_act.device)
+                        pred_act = (bins.reshape(self.horizon, self.act_dim) / self.num_bins_actions) * (
+                            max_act - min_act
+                        ) + min_act
+                        pred_acts_list.append(pred_act)
+                    pred_acts = torch.stack(pred_acts_list, dim=0)  # [bs, horizon, act_dim]
+                    mae_per_joint = (pred_acts - out_ori_act).abs().mean(dim=(0, 1))  # [act_dim]
+
+            return {"loss": loss, "mae_per_joint": mae_per_joint}
 
         if get_action:
             sample_args = {}
@@ -858,6 +924,8 @@ class QwenActor(nn.Module):
             extra_kwargs = {}
             if self.use_flash_attention_2:
                 extra_kwargs["attn_implementation"] = "flash_attention_2"
+            else:
+                extra_kwargs["attn_implementation"] = "sdpa"
             if self.attention_dropout > 0.0:
                 config = AutoConfig.from_pretrained(path)
                 config.attention_dropout = self.attention_dropout
@@ -885,6 +953,12 @@ class QwenActor(nn.Module):
             )
 
         print("Loading Qwen2.5 processor from", path)
+
+        # Re-enable gradient checkpointing — from_pretrained loads from config.json
+        # which has use_cache=True and no gradient_checkpointing, so we must
+        # re-apply the same settings that __init__ applied to the original model.
+        if self.grad_checkpoint:
+            self.model.gradient_checkpointing_enable()
 
         QwenActor.to(self, _device)
 

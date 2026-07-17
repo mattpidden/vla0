@@ -1,0 +1,37 @@
+EXP:
+  EXP_ID: "realworld_reproduce_with_state"
+  MODEL: "qwen"
+  LR_SCHED: "cosine_anneal"
+  AMP: True
+  OPTIMIZER: "adamw"
+
+TRAIN:
+  lr: 5e-6
+  num_epochs: 100
+  clip_grad_norm: 1.0
+  l2: 0.01
+
+EXP_EXTRA:
+  save_ckp: 4
+  save_last_ckpt: True
+
+DATALOADER:
+  batch_size: 24
+  num_workers: 8
+  ROBOVERSE:
+    cfg_path: libs/RoboVerse/roboverse/configs/realworld_reproduce_with_state.yaml
+    cfg_opts: IMAGE.crop_img:0.875:IMAGE.img_size:224:IMAGE.cam_list:('3p1','3p2')
+
+MODEL:
+  QWEN:
+    add_vision_id: True
+    use_lora: False
+    use_qlora: False
+    use_flash_attention_2: False
+    rgb_img_size: 224,224
+    original_action_dim: 6
+    action_mask_aug_per: 0.4
+    num_cam: 2
+    tiled_rgb_imgs: True
+    grad_checkpoint: True
+    include_state: True
