@@ -365,9 +365,13 @@ class QwenActor(nn.Module):
             min_act = self._min_act
             max_act = self._max_act
 
-        assert torch.all(min_act <= actions) and torch.all(
-            actions <= max_act
-        ), f"Action is out of range: {actions}"
+        if not (torch.all(min_act <= actions) and torch.all(actions <= max_act)):
+            over = (actions < min_act) | (actions > max_act)
+            print(f"WARNING: {over.sum().item()} action values out of range — clamping. "
+                  f"actions min={actions.min():.3f} max={actions.max():.3f}, "
+                  f"stats min={min_act.min():.3f} max={max_act.max():.3f}")
+            actions = torch.maximum(actions, min_act.expand_as(actions))
+            actions = torch.minimum(actions, max_act.expand_as(actions))
 
         actions = (actions - min_act) / (max_act - min_act)
         actions *= self.num_bins_actions

@@ -1,0 +1,22 @@
+unifier: image
+history: 1
+horizon: 8
+datasets: [lerobot]
+
+LEROBOT:
+  repo_id: mattpidden/vla0-real-world-dataset-v3
+  action_key: action
+  state_key: observation.state
+  fps: 10
+  le_cam_list: ['observation.images.wrist', 'observation.images.middle']
+  rv_cam_list: ['3p1', '3p2']
+  convert_ori_act_to_delta_act: True
+
+IMAGE:
+  crop_img: 1.0
+  brightness_aug: 0.3
+  contrast_aug: 0.3
+  saturation_aug: 0.3
+  hue_aug: 0.05
+  return_ori_act: True
+  return_proprio: False
