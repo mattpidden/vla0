@@ -28,16 +28,16 @@ from lerobot.robots.so101_follower.so101_follower import SO101Follower
 SERVER_URL = "http://localhost:10000"
 
 # Task instruction sent to the model
-TASK = "Pick the sponge and place it on the cloth."
+TASK = "Pick up the juggling ball and place it in the bowl."
 
 # Camera indices — must match training order:
 #   3p1 (first image) = wrist camera  (observation.images.wrist)
 #   3p2 (second image) = middle camera (observation.images.middle)
-WRIST_CAMERA_IDX = 8
-MIDDLE_CAMERA_IDX = 4
+WRIST_CAMERA_IDX = 0
+MIDDLE_CAMERA_IDX = 12
 
 # Robot serial port
-ROBOT_PORT = "/dev/ttyACM0"
+ROBOT_PORT = "/dev/ttyACM1"
 
 # Control frequency. Must match dataset FPS (10) so each action step covers
 # the same time interval the model was trained on.
