@@ -74,11 +74,11 @@ def transform_from_so100(
     return unified_sample
 
 
-def get_so100_action(output_data) -> List[float]:
-    """Does the unification from roboverse output to SO100 data"""
+def get_so100_action(output_data) -> np.ndarray:
+    """Returns raw model output, shape (horizon, action_dim). May be deltas or absolute."""
     action = output_data["out_ori_act"].squeeze(0).detach().cpu().numpy()
     print(action)
-    return action.tolist()
+    return action
 
 
 class RoboverseModelManager:
@@ -92,6 +92,17 @@ class RoboverseModelManager:
 
 
 class So100ModelManager(RoboverseModelManager):
+    def __init__(self, checkpoint=ROBOVERSE_DEPLOY_CHECKPOINT):
+        super().__init__(checkpoint)
+        rv_cfg = roboverse.main.get_cfg(
+            self.cfg.DATALOADER.ROBOVERSE.cfg_path,
+            self.cfg.DATALOADER.ROBOVERSE.cfg_opts,
+        )
+        self.use_delta_actions = getattr(
+            rv_cfg.LEROBOT, "convert_ori_act_to_delta_act", False
+        )
+        print(f"Relative/delta actions: {self.use_delta_actions}")
+
     def forward(
         self,
         image_rgb: List[np.ndarray],
@@ -109,9 +120,16 @@ class So100ModelManager(RoboverseModelManager):
         )
         print(f"Model time taken: {time.time() - start_time}")
 
+        actions = get_so100_action(output_data)  # (horizon, action_dim)
+
+        if self.use_delta_actions:
+            # Model predicted deltas relative to current state — convert to absolute.
+            current_state = np.array(state, dtype=np.float32)
+            actions = actions + current_state  # broadcasts over horizon dim
+
         if get_one_step_action:
-            out = get_so100_action(output_data), output_data["pred_action_txt"][0]
+            out = actions.tolist(), output_data["pred_action_txt"][0]
         else:
-            out = get_so100_action(output_data), None
+            out = actions.tolist(), None
 
         return out

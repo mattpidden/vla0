@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=288
 #SBATCH --mem=0
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/vla0_realworld_with_state_%j.out
-#SBATCH --error=logs/vla0_realworld_with_state_%j.err
+#SBATCH --output=logs/vla0_realworld_relative_%j.out
+#SBATCH --error=logs/vla0_realworld_relative_%j.err
 
 cd /lus/lfs1aip2/projects/u6lm/mdp25/vla0
 
@@ -26,19 +26,19 @@ export PYTHONUNBUFFERED=1
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 
 # Log GPU memory every 2 seconds to diagnose OOM
-nvidia-smi dmon -s mu -d 2 > logs/gpu_mem_${SLURM_JOB_ID}.log 2>&1 &
-NVMON_PID=$!
+# nvidia-smi dmon -s mu -d 2 > logs/gpu_mem_${SLURM_JOB_ID}.log 2>&1 &
+# NVMON_PID=$!
 
 # Resume from last checkpoint if one exists
 RESUME_FLAG=""
-if [ -f ./runs/realworld_reproduce_with_state/model_last.pth ]; then
+if [ -f ./runs/realworld_reproduce_relative/model_last.pth ]; then
     RESUME_FLAG="--resume"
     echo "Found existing checkpoint, resuming training"
 fi
 
 python -u -m rv_train.train \
-    --exp-config ./configs/realworld_reproduce_with_state.yaml \
+    --exp-config ./configs/realworld_reproduce_relative.yaml \
     --devices 0,1,2,3 \
     $RESUME_FLAG
 
-kill $NVMON_PID 2>/dev/null || true
+# kill $NVMON_PID 2>/dev/null || true

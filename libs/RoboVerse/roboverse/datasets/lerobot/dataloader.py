@@ -314,8 +314,8 @@ class LeRobotRV(Dataset):
         if episodes is not None:
             self._fix_episode_data_index()
 
-        # for delta action, we need to compute the stats via the get_dataset_stats method in stats_utils.py
-        # for len(self.repo_id) > 1, we haven't tested if the stats are computed correctly.
+        # Populate self.stats so get_unifier_stats can take the fast early-return path
+        # instead of iterating all frames through the full image pipeline (~27 hrs for 124k frames).
         if not self.convert_ori_act_to_delta_act and (not len(self.repo_id) > 1):
             act_stats = self.dataset.meta.stats[self.action_key]
             del act_stats["mean"]
@@ -323,6 +323,62 @@ class LeRobotRV(Dataset):
             self.stats = {
                 "out_ori_act": act_stats,
             }
+        elif self.convert_ori_act_to_delta_act and len(self.repo_id) == 1:
+            # Fast delta stats: simulate lerobot's timestamp-based frame selection per
+            # episode (vectorized numpy, no images loaded). This correctly handles datasets
+            # whose native fps differs from the configured fps — consecutive raw frames are
+            # NOT the same as lerobot's 1-step offsets when native fps > config fps.
+            raw_actions = np.array(self.dataset.hf_dataset[self.action_key], dtype=np.float32)
+            if raw_actions.ndim == 1:
+                raw_actions = raw_actions[:, None]
+            ep_indices_raw = np.array(self.dataset.hf_dataset["episode_index"]).ravel()
+            raw_timestamps = np.array(self.dataset.hf_dataset["timestamp"], dtype=np.float64).ravel()
+
+            # Reconstruct the same action offset array used in delta_timestamps
+            action_offsets = np.array(
+                [x / fps for x in range(-history, horizon)], dtype=np.float64
+            )  # shape (history + horizon,): [ori_act offset, out_ori_act offsets...]
+
+            action_dim = raw_actions.shape[1]
+            delta_min = np.full(action_dim, np.inf, dtype=np.float32)
+            delta_max = np.full(action_dim, -np.inf, dtype=np.float32)
+
+            for ep in np.unique(ep_indices_raw):
+                ep_mask = ep_indices_raw == ep
+                ep_ts = raw_timestamps[ep_mask]   # (ep_len,) sorted timestamps
+                ep_acts = raw_actions[ep_mask]     # (ep_len, action_dim)
+                ep_len = len(ep_ts)
+                if ep_len < 2:
+                    continue
+
+                # For every anchor frame, compute target timestamps: (ep_len, n_offsets)
+                target_t = ep_ts[:, None] + action_offsets[None, :]
+
+                # Find nearest frame for each target via searchsorted (O(ep_len * n_offsets * log(ep_len)))
+                nearest = np.searchsorted(ep_ts, target_t.ravel())
+                nearest = np.clip(nearest, 0, ep_len - 1).reshape(ep_len, len(action_offsets))
+                prev = np.clip(nearest - 1, 0, ep_len - 1)
+
+                # Pick whichever of prev/nearest is closer to the target timestamp
+                t_nearest = ep_ts[nearest]
+                t_prev = ep_ts[prev]
+                use_prev = np.abs(t_prev - target_t) < np.abs(t_nearest - target_t)
+                final_idx = np.where(use_prev, prev, nearest)  # (ep_len, n_offsets)
+
+                # frames[i, j] = action at the selected frame for anchor i, offset j
+                frames = ep_acts[final_idx]                    # (ep_len, n_offsets, action_dim)
+                ori_anchor = frames[:, 0, :]                   # (ep_len, action_dim)
+                out_acts = frames[:, 1:, :]                    # (ep_len, horizon, action_dim)
+                deltas = out_acts - ori_anchor[:, None, :]     # (ep_len, horizon, action_dim)
+
+                delta_min = np.minimum(delta_min, deltas.min(axis=(0, 1)))
+                delta_max = np.maximum(delta_max, deltas.max(axis=(0, 1)))
+
+            # Small margin for any residual numerical precision differences
+            margin = np.maximum(np.abs(delta_min), np.abs(delta_max)) * 0.05 + 1e-3
+            self.stats = {"out_ori_act": {"min": (delta_min - margin).astype(np.float32),
+                                          "max": (delta_max + margin).astype(np.float32)}}
+            print(f"Delta action stats (min={delta_min - margin}, max={delta_max + margin})")
 
     def _fix_episode_data_index(self):
         """
