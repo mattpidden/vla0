@@ -61,6 +61,7 @@ _C.DATALOADER.num_workers = 1
 _C.DATALOADER.ROBOVERSE = CN()
 _C.DATALOADER.ROBOVERSE.cfg_path = "libs/RoboVerse/roboverse/configs/test.yaml"
 _C.DATALOADER.ROBOVERSE.cfg_opts = ""
+_C.DATALOADER.ROBOVERSE.convert_ori_act_to_delta_act = False
 # ----------------------------------------------------------------------------
 # MODEL
 # ----------------------------------------------------------------------------

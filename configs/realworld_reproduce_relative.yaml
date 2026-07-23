@@ -21,6 +21,7 @@ DATALOADER:
   ROBOVERSE:
     cfg_path: libs/RoboVerse/roboverse/configs/realworld_reproduce_relative.yaml
     cfg_opts: IMAGE.crop_img:0.875:IMAGE.img_size:224:IMAGE.cam_list:('3p1','3p2')
+    convert_ori_act_to_delta_act: True
 
 MODEL:
   QWEN:

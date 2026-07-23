@@ -94,12 +94,8 @@ class RoboverseModelManager:
 class So100ModelManager(RoboverseModelManager):
     def __init__(self, checkpoint=ROBOVERSE_DEPLOY_CHECKPOINT):
         super().__init__(checkpoint)
-        rv_cfg = roboverse.main.get_cfg(
-            self.cfg.DATALOADER.ROBOVERSE.cfg_path,
-            self.cfg.DATALOADER.ROBOVERSE.cfg_opts,
-        )
         self.use_delta_actions = getattr(
-            rv_cfg.LEROBOT, "convert_ori_act_to_delta_act", False
+            self.cfg.DATALOADER.ROBOVERSE, "convert_ori_act_to_delta_act", False
         )
         print(f"Relative/delta actions: {self.use_delta_actions}")
 
